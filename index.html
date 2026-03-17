@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    KOLIBRI EPUB VIEWER - foliate-js Migration Prototype
+    Author: Abhiswant Chaudhary (abhicodes0324)
+    GSoC 2026 Proposal: "Update EPub rendering to a safely sandboxed viewer"
+    Mentor: Richard Tibbles - Learning Equality
+
+    PURPOSE:
+    This file is a proof-of-concept demonstrating the migration from
+    EPub.js to foliate-js proposed for Kolibri's epub_viewer plugin.
+
+    It mirrors the structure of:
+      kolibri/plugins/epub_viewer/frontend/views/EpubRendererIndex.vue
+
+    MODULAR ARCHITECTURE:
+    This prototype is split into modules that map 1:1 to Kolibri components:
+
+      js/constants.js       → EpubConstants.js
+      js/state.js           → Vue ref() reactive state + Lockr persistence
+      js/logger.js          → Demo-only event log panel
+      js/toc.js             → TableOfContentsSideBar.vue
+      js/theme.js           → SettingsSideBar.vue (theme section)
+      js/epub-controller.js → EpubRendererIndex.vue (core logic)
+      js/main.js            → setup() lifecycle + event wiring
+
+    KEY THINGS DEMONSTRATED:
+    1. foliate-view custom element opens EPUBs (replaces EPub.js Book + renderTo)
+    2. 'relocate' event drives progress tracking (replaces visitedPages/locations ratio)
+    3. 'load' event allows CSS injection for reader themes (replaces rendition.themes)
+    4. Font size change via renderer.setStyles() (replaces rendition.themes.register)
+    5. TOC from view.book.toc (same .label/.href/.subitems structure as EPub.js)
+    6. goToFraction() drives the progress slider (replaces locations-array indexing)
+    7. Cleanup mirrors onUnmounted() lifecycle - clearInterval + stopTracking emit
+    8. localStorage persistence of settings (replaces Lockr dependency)
+    9. Error handling mirrors errorLoading state in EpubRendererIndex.vue
+    10. Security: foliate-js does not execute EPUB scripts by design
+
+    BROWSER COMPATIBILITY NOTE:
+    foliate-js uses Custom Elements and ResizeObserver, which require polyfills
+    for Kolibri's minimum supported browsers (Chrome 49, Firefox 52).
+    In the actual Kolibri plugin, these are added to buildConfig.js:
+      @webcomponents/custom-elements (Custom Elements polyfill)
+      resize-observer-polyfill (ResizeObserver ponyfill)
+    This prototype targets modern browsers for demonstration purposes.
+  -->
+
+  <!--
+    CSP NOTE for Kolibri integration:
+    foliate-js requires: script-src 'self'; frame-src blob:
+    It does NOT execute EPUB scripts - this is a design decision, not CSP-dependent.
+    Current Kolibri CSP in zip_wsgi.py:
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:"
+    This is compatible. The security improvement is architectural (foliate-js
+    refuses to run EPUB JS), not just a header change.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; frame-src blob: data:;">
+
+  <title>Kolibri EPub Viewer - foliate-js Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="prototype-badge">GSoC 2026 Prototype - foliate-js migration for Kolibri epub_viewer</div>
+
+<!-- ── TOP BAR (mirrors TopBar.vue) ───────────────────────────────────── -->
+<div id="top-bar" role="toolbar" aria-label="Book reader controls">
+  <div class="btn-group">
+    <button class="toolbar-btn" id="toc-btn" aria-label="Table of contents" title="Table of contents" aria-expanded="true" aria-controls="toc-sidebar">
+      ☰
+    </button>
+  </div>
+
+  <span id="top-bar-title" role="heading" aria-level="1">Open an EPUB to begin</span>
+
+  <div class="btn-group">
+    <button class="toolbar-btn" id="settings-btn" aria-label="Settings" title="Settings" aria-expanded="false" aria-controls="settings-sidebar">
+      ⚙
+    </button>
+    <button class="toolbar-btn" id="debug-btn" aria-label="Toggle event log" title="Show foliate-js events (for proposal demo)">
+      ⚡ Events
+    </button>
+    <label class="toolbar-btn" style="cursor:pointer" title="Open EPUB file">
+      📂 Open
+      <input type="file" id="file-input" accept=".epub" hidden>
+    </label>
+  </div>
+</div>
+
+<!-- ── MAIN CONTENT ────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- TOC Sidebar (mirrors TableOfContentsSideBar.vue) -->
+  <nav id="toc-sidebar" aria-label="Table of contents">
+    <h3>Table of Contents</h3>
+    <div id="toc-list" role="list">
+      <p style="padding:12px 16px;color:#9e9e9e;font-size:12px">Open an EPUB to see chapters</p>
+    </div>
+  </nav>
+
+  <!-- Viewer area with nav buttons -->
+  <div id="viewer-container">
+
+    <!-- Loading state (mirrors LoadingScreen.vue) -->
+    <div id="loading-state" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <span class="state-msg">Loading book…</span>
+    </div>
+
+    <!-- Error state (mirrors LoadingError.vue) -->
+    <div id="error-state" role="alert" aria-live="assertive">
+      <span aria-hidden="true" style="font-size:32px">⚠️</span>
+      <span class="error-msg" id="error-msg">Could not load this book.</span>
+    </div>
+
+    <!-- Drop / open state -->
+    <div id="drop-state">
+      <div class="drop-area" id="drop-zone" tabindex="0" role="button"
+           aria-label="Drop an EPUB file here, or click to open a file">
+        <div class="drop-icon" aria-hidden="true">📖</div>
+        <div class="drop-label">Drop an EPUB here</div>
+        <div class="drop-sub">or use the Open button above</div>
+      </div>
+      <div class="open-url-row">
+        <input id="url-input" type="url" placeholder="Or enter EPUB URL…" aria-label="EPUB URL">
+        <button class="btn-primary" id="url-open-btn">Open URL</button>
+      </div>
+    </div>
+
+    <!-- Previous button (mirrors PreviousButton.vue) -->
+    <button class="nav-btn" id="prev-btn" aria-label="Go to previous page" disabled>‹</button>
+
+    <!-- THE foliate-view custom element
+         This is the core replacement for EPub.js's renderTo() + SandboxIFrameView.js
+         The element is defined by view.js via customElements.define('foliate-view', View)
+    -->
+    <foliate-view id="epub-view" aria-label="Book content"></foliate-view>
+
+    <!-- Next button (mirrors NextButton.vue) -->
+    <button class="nav-btn" id="next-btn" aria-label="Go to next page" disabled>›</button>
+
+  </div>
+
+  <!-- Settings Sidebar (mirrors SettingsSideBar.vue) -->
+  <aside id="settings-sidebar" aria-label="Reader settings">
+    <div class="settings-section">
+      <h3>Text Size</h3>
+      <!-- mirrors SettingsSideBar.vue's KButton font controls -->
+      <div class="font-controls">
+        <button class="font-btn" id="font-dec" aria-label="Decrease text size">A− Decrease</button>
+        <button class="font-btn" id="font-inc" aria-label="Increase text size">A+ Increase</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Theme</h3>
+      <!--
+        IMPORTANT NOTE for Kolibri reviewers:
+        These theme colours are hardcoded deliberately.
+        In EpubConstants.js the comment reads:
+          "colors are hardcoded deliberately since Epub Reader
+           themes are meant to be independent of Kolibri themes"
+        This convention is preserved in the migration.
+        Only the chrome UI (TopBar, BottomBar) uses $themeTokens.
+      -->
+      <div class="theme-grid">
+        <button class="theme-btn selected" id="theme-white"
+                style="background:#ffffff;color:#212121;border-color:#1565c0"
+                aria-label="Set white theme" aria-pressed="true">
+          Aa <span class="check">✓</span>
+        </button>
+        <button class="theme-btn" id="theme-beige"
+                style="background:#efebe9;color:#4e342e"
+                aria-label="Set beige theme" aria-pressed="false">
+          Aa <span class="check">✓</span>
+        </button>
+        <button class="theme-btn" id="theme-grey"
+                style="background:#424242;color:#ffffff"
+                aria-label="Set grey theme" aria-pressed="false">
+          Aa <span class="check">✓</span>
+        </button>
+        <button class="theme-btn" id="theme-black"
+                style="background:#212121;color:#bdbdbd"
+                aria-label="Set black theme" aria-pressed="false">
+          Aa <span class="check">✓</span>
+        </button>
+        <button class="theme-btn" id="theme-yellow"
+                style="background:#212121;color:#fff176"
+                aria-label="Set yellow theme" aria-pressed="false">
+          Aa <span class="check">✓</span>
+        </button>
+        <button class="theme-btn" id="theme-blue"
+                style="background:#ffffff;color:#1565c0"
+                aria-label="Set blue theme" aria-pressed="false">
+          Aa <span class="check">✓</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Layout</h3>
+      <div class="font-controls">
+        <button class="font-btn" id="flow-paginated" aria-pressed="true" style="border-color:#1565c0">
+          Paginated
+        </button>
+        <button class="font-btn" id="flow-scrolled" aria-pressed="false">
+          Scrolled
+        </button>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── BOTTOM BAR (mirrors BottomBar.vue) ─────────────────────────────── -->
+<div id="bottom-bar">
+  <div id="section-title" aria-live="polite" aria-atomic="true"></div>
+  <div id="progress-row">
+    <span id="progress-pct" aria-live="polite" aria-atomic="true">0%</span>
+    <!--
+      Progress slider - replaces the visitedPages/locations.length ratio from EPub.js.
+      foliate-js gives us e.detail.fraction (0–1) directly from the 'relocate' event.
+      This maps cleanly to:
+        this.$emit('updateProgress', fraction)  ← in EpubRendererIndex.vue
+    -->
+    <input type="range" id="progress-slider" min="0" max="1" step="0.001" value="0"
+           aria-label="Jump to position in book" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="0" aria-valuetext="0%">
+  </div>
+</div>
+
+<!-- Event log (proof-of-concept demo panel) -->
+<div id="event-log" aria-label="foliate-js event log" aria-live="polite">
+  <div style="color:#80deea;margin-bottom:4px;font-weight:bold">
+    foliate-js events → Kolibri tracking
+  </div>
+</div>
+
+<!-- Entry point - wires all modules together (mirrors setup() in Vue Composition API) -->
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>
