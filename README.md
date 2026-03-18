@@ -9,6 +9,8 @@
 
 A self-contained proof-of-concept demonstrating the migration of Kolibri's `epub_viewer` plugin from **EPub.js** to **[foliate-js](https://github.com/johnfactotum/foliate-js)**. It proves that foliate-js can replace every EPub.js API call used in the current plugin while being more secure, accessible, and maintainable.
 
+**Live deployment:** https://abhicodes0324.github.io/kolibri-epub-viewer-prototype
+
 ### Key things demonstrated
 
 | # | Feature | EPub.js (before) | foliate-js (after) |
