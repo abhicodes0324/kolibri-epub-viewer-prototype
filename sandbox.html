@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!--
+    This page runs inside a sandboxed iframe.
+    It mirrors how foliate-js will run inside kolibri-sandbox.
+    Communication with the parent happens via postMessage only.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' blob:; img-src blob: data:; frame-src blob:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kolibri EPUB Sandbox Host</title>
+  <!--
+    Polyfills for Kolibri minimum browser targets (Chrome 49, Firefox 52):
+    1) @webcomponents/custom-elements (load before foliate view registration)
+    2) resize-observer-polyfill (ponyfill ResizeObserver for paginator sizing)
+    In the real plugin build these are injected by Kolibri bundling config.
+  -->
+  <!--
+    Prototype note: this page is same-origin in the static demo.
+    In production it is served from a dedicated kolibri-sandbox origin.
+  -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    foliate-view { width: 100%; height: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <foliate-view id="epub-view" aria-label="Book content"></foliate-view>
+  <script type="module" src="./js/sandbox-host.js"></script>
+</body>
+</html>

@@ -24,8 +24,8 @@
       js/logger.js          → Demo-only event log panel
       js/toc.js             → TableOfContentsSideBar.vue
       js/theme.js           → SettingsSideBar.vue (theme section)
-      js/epub-controller.js → EpubRendererIndex.vue (core logic)
-      js/main.js            → setup() lifecycle + event wiring
+      js/sandbox-host.js    → sandbox runtime bridge (inside iframe)
+      js/main.js            → setup() lifecycle + parent bridge wiring
 
     KEY THINGS DEMONSTRATED:
     1. foliate-view custom element opens EPUBs (replaces EPub.js Book + renderTo)
@@ -58,7 +58,7 @@
     refuses to run EPUB JS), not just a header change.
   -->
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; frame-src blob: data:;">
+    content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' blob: data:; frame-src 'self' blob: data:;">
 
   <title>Kolibri EPub Viewer - foliate-js Prototype</title>
   <link rel="stylesheet" href="styles.css">
@@ -134,11 +134,18 @@
     <!-- Previous button (mirrors PreviousButton.vue) -->
     <button class="nav-btn" id="prev-btn" aria-label="Go to previous page" disabled>‹</button>
 
-    <!-- THE foliate-view custom element
-         This is the core replacement for EPub.js's renderTo() + SandboxIFrameView.js
-         The element is defined by view.js via customElements.define('foliate-view', View)
+    <!--
+      Sandboxed host frame.
+      foliate-view now runs inside sandbox.html and this parent page controls it via postMessage.
+      Prototype note: this static demo serves sandbox.html from the same origin as index.html.
+      Real Kolibri integration serves the sandbox page from a separate kolibri-sandbox origin,
+      which is the actual trust boundary for untrusted EPUB content.
     -->
-    <foliate-view id="epub-view" aria-label="Book content"></foliate-view>
+    <iframe id="sandbox-frame"
+            title="Book content"
+            src="./sandbox.html"
+            sandbox="allow-scripts allow-same-origin"
+            referrerpolicy="no-referrer"></iframe>
 
     <!-- Next button (mirrors NextButton.vue) -->
     <button class="nav-btn" id="next-btn" aria-label="Go to next page" disabled>›</button>

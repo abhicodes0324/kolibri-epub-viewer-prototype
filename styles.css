@@ -256,10 +256,14 @@ body {
 .nav-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 .nav-btn:focus-visible { outline: 2px solid var(--kds-primary); }
 
-/* The actual foliate-view element */
-foliate-view {
+/* Sandboxed reader host frame */
+#sandbox-frame {
   flex: 1;
   min-width: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
 }
 
 /* ── Loading / Error states - mirrors LoadingScreen.vue / LoadingError.vue ─── */

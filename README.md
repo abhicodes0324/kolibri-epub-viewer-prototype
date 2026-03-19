@@ -48,7 +48,8 @@ This prototype is split into modules that map **1:1** to Kolibri's Vue component
 
 ```
 kolibri-epub-viewer-prototype/
-├── index.html              ← HTML shell (mirrors EpubRendererIndex.vue template)
+├── index.html              ← Parent host app (UI + state + postMessage bridge)
+├── sandbox.html            ← Inner sandbox runtime page (hosts foliate-view)
 ├── styles.css              ← All CSS (mirrors Kolibri Design System tokens)
 ├── js/                     ← Prototype modules (map 1:1 to Kolibri components)
 │   ├── constants.js        → EpubConstants.js
@@ -56,8 +57,8 @@ kolibri-epub-viewer-prototype/
 │   ├── logger.js           → Demo-only event log (not in final plugin)
 │   ├── toc.js              → TableOfContentsSideBar.vue
 │   ├── theme.js            → SettingsSideBar.vue (theme section)
-│   ├── epub-controller.js  → EpubRendererIndex.vue (core book logic)
-│   └── main.js             → setup() lifecycle wiring
+│   ├── main.js             → parent-side setup() + command/event routing
+│   └── sandbox-host.js     → sandbox-side foliate runtime controller
 └── lib/                    ← foliate-js library (vendored)
     ├── view.js, epub.js, paginator.js, ...
     └── vendor/             ← zip.js, fflate, pdf.js
@@ -67,17 +68,15 @@ kolibri-epub-viewer-prototype/
 
 ```
 main.js
-  ├── lib/view.js (foliate-js library)
+  ├── sandbox.html (iframe host target)
   ├── constants.js
   ├── state.js ← constants.js
   ├── logger.js
   ├── theme.js ← state.js, constants.js, logger.js
-  └── epub-controller.js
-        ├── state.js
-        ├── constants.js
-        ├── logger.js
-        ├── toc.js ← logger.js
-        └── theme.js
+  └── toc.js ← logger.js
+
+sandbox-host.js
+  └── lib/view.js (foliate-js library)
 ```
 
 ## Browser compatibility
@@ -98,10 +97,12 @@ foliate-js uses modern web APIs. For Kolibri's minimum browser targets (Chrome 4
 - **foliate-js does NOT execute JavaScript found in EPUB files** - this is a design-level decision, not dependent on CSP headers.
 - Current Kolibri CSP (`default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:`) is compatible with foliate-js requirements (`script-src 'self'`; `frame-src blob:`).
 - The security improvement is *architectural*, not just a header change.
+- Prototype limitation: this static demo serves `sandbox.html` from the same origin as `index.html`. Real Kolibri integration uses a separate `kolibri-sandbox` origin as the trust boundary.
+- Cross-origin-safe transfer is demonstrated by sending local EPUB files as `ArrayBuffer` via `postMessage` and reconstructing `Blob` inside the sandbox runtime.
 
 ## What's NOT in this prototype (but planned for the full GSoC project)
 
-- [ ] Integration with Kolibri's `kolibri-sandbox` iframe
+- [ ] Serving sandbox runtime from real Kolibri `kolibri-sandbox` origin
 - [ ] Vue.js component wrappers (this is vanilla JS to show the API surface)
 - [ ] EPUB3 SMIL (Media Overlays) for synchronized audio
 - [ ] Search integration using foliate-js `search.js`

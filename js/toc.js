@@ -59,9 +59,12 @@ export function countToc(toc) {
  * Highlight the current TOC item matching the given href.
  */
 export function updateCurrentTocItem(href) {
+  const currentHref = typeof href === 'string' ? href : ''
+
   document.querySelectorAll('.toc-item').forEach(btn => {
-    const isCurrent = href && btn.dataset.href
-      && (href.endsWith(btn.dataset.href) || btn.dataset.href.endsWith(href))
+    const buttonHref = typeof btn.dataset.href === 'string' ? btn.dataset.href : ''
+    const isCurrent = currentHref && buttonHref
+      && (currentHref.endsWith(buttonHref) || buttonHref.endsWith(currentHref))
     btn.setAttribute('aria-current', String(!!isCurrent))
   })
 }
