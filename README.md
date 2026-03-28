@@ -11,6 +11,8 @@ A self-contained proof-of-concept demonstrating the migration of Kolibri's `epub
 
 **Live deployment:** https://abhicodes0324.github.io/kolibri-epub-viewer-prototype
 
+**2-minute demo video:** https://youtu.be/stxMPeb9D6A
+
 ### Key things demonstrated
 
 | # | Feature | EPub.js (before) | foliate-js (after) |
